@@ -12,18 +12,41 @@ The bundle registers the `kiro` provider route and mounts itself when installed.
 
 This is an independent integration and is not affiliated with or endorsed by AWS or Kiro. Kiro and its logo are Amazon trademarks; see [NOTICE.md](NOTICE.md).
 
+## This fork and dsh 0.2.1 compatibility
+
+This fork is maintained independently by [LosMerengue](https://github.com/LosMerengue/dsh-kiro), based on [dat-lequoc/dsh-kiro](https://github.com/dat-lequoc/dsh-kiro). **`dsh-kiro 0.1.20` natively supports `dsh 0.2.1-rc.2` and passes DSH's standard compatibility checks without an `allow-version` exemption.** Dependencies target that exact runtime; other `0.2.1` versions require separate verification.
+
+Changes in this fork:
+
+- **Aligned dependencies and build artifacts**: updated DSH peer and development dependencies to `0.2.1-rc.2`, refreshed the lockfile, and rebuilt the committed `lib/` artifacts for installation without a build step.
+- **Removed a retired interface**: deleted the empty companion that depended on `@deepseek-ai/dsh-invariants`, along with its dependencies, `./invariant` export, and build entry. This fixes missing-module and type-check failures on the new runtime.
+- **Retained upstream image compatibility**: kept upstream's `requestImageDimensions()` adaptation. Remove any old deployment-specific `pnpm` image patch registration for `dsh-kiro@0.1.19` when upgrading.
+- **Added verification without exemptions**: `npm run test:dsh` installs the packed plugin into a temporary profile and checks the absence of exemptions, native module loading, Kiro config schema, Web startup, and the authenticated Kiro settings API.
+
+Type checking, 240 offline tests, and the build passed. Installation without exemptions, the Web page, and the Kiro settings API passed with HTTP 200. Live account login, model inference, and image requests require separate opt-in tests. Upstream implementation credits and copyright notices are retained.
+
 ## Install
 
+Install this fork with `dsh 0.2.1-rc.2`:
+
 ```sh
-dsh plugin --profile web add github:dat-lequoc/dsh-kiro
+dsh plugin --profile web add github:LosMerengue/dsh-kiro
 dsh --profile web
 ```
+
+Restart any existing DSH process after installation. If you previously granted an exemption for `0.1.19`, you can remove that old record after installing this fork at `0.1.20`:
+
+```sh
+dsh plugin --profile web revoke-version dsh-kiro@0.1.19 --dsh-version 0.2.1-rc.2
+```
+
+Profiles that also install `dsh-codex` should check that its transitive `@deepseek-ai/dsh-session-format-catalog` / `image-offload` dependencies match the runtime. Updating Kiro does not update dependencies pinned by other plugins.
 
 From a DeepSeek Harness source checkout, use its launcher:
 
 ```sh
 cd ~/deepseek-harness
-pnpm dsh plugin --profile web add github:dat-lequoc/dsh-kiro
+pnpm dsh plugin --profile web add github:LosMerengue/dsh-kiro
 pnpm dsh --profile web
 ```
 
@@ -255,7 +278,7 @@ KIRO_LIVE=1 KIRO_MODEL=claude-opus-5 KIRO_EFFORT=high npx vitest run tests/live-
 
 ## Known limitations
 
-- Image content is currently rejected with `UNSUPPORTED_CONTENT`.
+- Image input requires a model that advertises image support and an available attachment service in the profile; otherwise it is rejected with `UNSUPPORTED_CONTENT`.
 - `temperature`, `topP`, and stop sequences have no accepted placement in Kiro's `generateAssistantResponse` request and are ignored.
 - Tool names must match `^[A-Za-z][A-Za-z0-9_]{0,63}$`.
 - SOCKS proxies are not supported.

@@ -12,18 +12,41 @@
 
 这是一个独立集成项目，与 AWS 或 Kiro 没有关联，也未获其赞助或认可。Kiro 及其徽标是 Amazon 的商标；详见 [NOTICE.md](NOTICE.md)。
 
+## 本 fork 与 dsh 0.2.1 适配
+
+本仓库由 [LosMerengue](https://github.com/LosMerengue/dsh-kiro) 独立维护，fork 自 [dat-lequoc/dsh-kiro](https://github.com/dat-lequoc/dsh-kiro)。**`dsh-kiro 0.1.20` 原生适配 `dsh 0.2.1-rc.2`，通过 DSH 标准版本检查，无需 `allow-version` 豁免。** 当前依赖精确对齐该运行时；其他 `0.2.1` 版本需另行验证。
+
+本 fork 的改动：
+
+- **对齐依赖与构建**：将 DSH peer 依赖和开发依赖更新到 `0.2.1-rc.2`，同步锁文件，并重新生成可直接安装的 `lib/` 产物。
+- **移除已下线接口**：删除依赖 `@deepseek-ai/dsh-invariants` 的空伴随模块，以及对应依赖、`./invariant` 导出和构建入口，修复新运行时下的模块缺失与类型检查错误。
+- **保留图片接口适配**：沿用上游已有的 `requestImageDimensions()` 修复。升级时应移除部署环境中针对 `dsh-kiro@0.1.19` 的旧 `pnpm` 图片补丁记录。
+- **增加无豁免验证**：提供 `npm run test:dsh`，将打包后的插件安装到临时 profile，检查无版本豁免、原生模块加载、Kiro 配置 schema、Web 启动及认证后的 Kiro 设置接口。
+
+类型检查、240 项离线测试与构建已通过；无豁免安装、Web 页面和 Kiro 设置接口检查通过，HTTP 返回 200。真实账号登录、模型推理和图片请求的线上测试仍需单独启用。原作者的实现及版权声明予以保留。
+
 ## 安装
 
+在 `dsh 0.2.1-rc.2` 中安装本 fork：
+
 ```sh
-dsh plugin --profile web add github:dat-lequoc/dsh-kiro
+dsh plugin --profile web add github:LosMerengue/dsh-kiro
 dsh --profile web
 ```
+
+安装后需重启已有的 DSH 进程。此前为 `0.1.19` 添加过豁免的用户，在安装本 fork 的 `0.1.20` 后可以清理旧记录：
+
+```sh
+dsh plugin --profile web revoke-version dsh-kiro@0.1.19 --dsh-version 0.2.1-rc.2
+```
+
+若 profile 还安装了 `dsh-codex`，应检查其间接引入的 `@deepseek-ai/dsh-session-format-catalog` / `image-offload` 是否与运行时一致；Kiro 插件的版本升级不会自动修复其他插件锁定的旧依赖。
 
 使用 DeepSeek Harness 源码 checkout 时：
 
 ```sh
 cd ~/deepseek-harness
-pnpm dsh plugin --profile web add github:dat-lequoc/dsh-kiro
+pnpm dsh plugin --profile web add github:LosMerengue/dsh-kiro
 pnpm dsh --profile web
 ```
 
@@ -248,7 +271,7 @@ KIRO_LIVE=1 KIRO_MODEL=claude-opus-5 KIRO_EFFORT=high npx vitest run tests/live-
 
 ## 已知限制
 
-- 图片输入目前以 `UNSUPPORTED_CONTENT` 拒绝。
+- 图片输入要求模型声明支持图片，且 profile 挂载可用的附件服务；不满足条件时会返回 `UNSUPPORTED_CONTENT`。
 - `temperature`、`topP` 与 stop 序列在 Kiro 的 `generateAssistantResponse` 请求中没有可用位置，会被忽略。
 - 工具名必须匹配 `^[A-Za-z][A-Za-z0-9_]{0,63}$`。
 - 不支持 SOCKS 代理。
