@@ -369,6 +369,7 @@ export function registerWebApi(ctx: Context, dependencies: WebDependencies): voi
       startedAt: Date.now(),
       ...target,
     }
+    login = flow
     monitorLogin(
       session.intervalSeconds,
       flow,

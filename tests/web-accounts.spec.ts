@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as login from '../src/login.ts'
 import { KiroAccountStore } from '../src/accounts.ts'
 import { resolveAdapterOptions } from '../src/index.ts'
 import { saveManagedCredentials } from '../src/login.ts'
@@ -13,6 +14,7 @@ import type { WebDependencies } from '../src/web.ts'
 let home: string
 let directory: string
 let handler: (request: IncomingMessage, response: ServerResponse) => Promise<void>
+let dispose: () => void
 
 /** Drive one request through the registered Kiro API handler. */
 async function call(method: string, path: string, body?: unknown): Promise<{ status: number; value: any }> {
@@ -55,7 +57,7 @@ beforeEach(async () => {
     logger: { warn: () => undefined, error: () => undefined },
     inject: (_names: string[], use: (scope: unknown) => void) => {
       use({
-        effect: (run: () => unknown) => run(),
+        effect: (run: () => () => void) => { dispose = run() },
         webServer: {
           register: (options: { handler: typeof handler }) => {
             handler = options.handler
@@ -77,8 +79,94 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  dispose()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   delete process.env.DSH_HOME
   await rm(home, { recursive: true, force: true })
+})
+
+describe('Kiro device login API', () => {
+  const session: login.DeviceLoginSession = {
+    clientId: 'test-client',
+    clientSecret: 'test-secret',
+    deviceCode: 'private-device-code',
+    userCode: 'TEST-CODE',
+    verificationUri: 'https://example.invalid/device',
+    intervalSeconds: 5,
+    expiresAt: Date.now() + 600_000,
+    region: 'us-east-1',
+    authMethod: 'builder-id',
+    startUrl: 'https://view.awsapps.com/start',
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.spyOn(login, 'startDeviceLogin').mockResolvedValue(session)
+    vi.spyOn(login, 'pollDeviceLogin').mockResolvedValue({ status: 'pending', intervalSeconds: 5 })
+    // Status must not inspect credentials outside this test's temporary home.
+    vi.spyOn(login, 'credentialSummary').mockResolvedValue({ authenticated: false })
+  })
+
+  it.each(['builder-id', 'idc'])('publishes the pending %s flow in login and status responses', async method => {
+    const result = await call('POST', '/kiro/api/login', {
+      method,
+      startUrl: 'https://company.awsapps.com/start',
+      accountId: 'existing-account',
+    })
+    expect(result.status).toBe(200)
+    expect(result.value.value).toEqual({
+      status: 'pending',
+      kind: 'device',
+      method,
+      authUrl: session.verificationUri,
+      userCode: session.userCode,
+      accountId: 'existing-account',
+      startedAt: expect.any(Number),
+    })
+    expect(login.startDeviceLogin).toHaveBeenCalledWith(
+      'us-east-1', expect.any(Function), expect.any(AbortSignal),
+      method === 'idc'
+        ? { authMethod: method, startUrl: 'https://company.awsapps.com/start' }
+        : { authMethod: method },
+    )
+    const status = await call('GET', '/kiro/api/status')
+    expect(status.value.value.login).toEqual(result.value.value)
+    expect(login.pollDeviceLogin).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(login.pollDeviceLogin).toHaveBeenCalledTimes(1)
+    expect((await call('GET', '/kiro/api/status')).value.value.login.status).toBe('pending')
+  })
+
+  it('replaces an existing pending flow and cancels its polling', async () => {
+    await call('POST', '/kiro/api/login', { method: 'builder-id' })
+    const previousSignal = vi.mocked(login.startDeviceLogin).mock.calls[0]![2]
+    vi.mocked(login.startDeviceLogin).mockResolvedValueOnce({ ...session, userCode: 'NEXT-CODE' })
+    const next = await call('POST', '/kiro/api/login', { method: 'builder-id' })
+    expect(previousSignal.aborted).toBe(true)
+    expect(next.value.value).toMatchObject({ status: 'pending', userCode: 'NEXT-CODE' })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(login.pollDeviceLogin).toHaveBeenCalledTimes(1)
+    expect((await call('GET', '/kiro/api/status')).value.value.login).toEqual(next.value.value)
+  })
+
+  it('clears pending authorization and stops polling when cancelled', async () => {
+    await call('POST', '/kiro/api/login', { method: 'builder-id' })
+    const result = await call('POST', '/kiro/api/login/cancel')
+    expect(result.value.value.login).toEqual({ status: 'idle' })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(login.pollDeviceLogin).not.toHaveBeenCalled()
+  })
+
+  it('reports startup failure without publishing a pending flow', async () => {
+    vi.mocked(login.startDeviceLogin).mockRejectedValueOnce(new Error('OIDC unavailable'))
+    const result = await call('POST', '/kiro/api/login', { method: 'builder-id' })
+    expect(result.status).toBe(500)
+    expect(result.value).toEqual({ ok: false, error: 'OIDC unavailable' })
+    expect((await call('GET', '/kiro/api/status')).value.value.login).toEqual({ status: 'idle' })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(login.pollDeviceLogin).not.toHaveBeenCalled()
+  })
 })
 
 describe('Kiro account API', () => {
