@@ -1,9 +1,9 @@
 # Verification harness
 
-## Native DSH 0.2.1 compatibility
+## Native DSH 0.2.2 compatibility
 
 After `npm install` and `npm run check`, run against an installed
-`@deepseek-ai/dsh@0.2.1-rc.2` launcher, with `pnpm` available on `PATH`:
+`@deepseek-ai/dsh@0.2.2-rc.1` launcher, with `pnpm` available on `PATH`:
 
 ```sh
 npm run test:dsh -- /absolute/path/to/@deepseek-ai/dsh/lib/bin.js
@@ -18,7 +18,7 @@ and `KIRO_*` environment variables are removed so the probe does not use the
 operator's credentials or make inference requests. The server is stopped after
 the check, and successful temporary installations are removed.
 
-DSH `0.2.1-rc.2` reports four schema-projection errors for its own
+DSH `0.2.2-rc.1` reports four schema-projection errors for its own
 `@deepseek-ai/dsh-agent-preset` carriers. The probe explicitly permits only
 that upstream diagnostic, requires a complete Kiro schema, and fails on any
 other schema error or disabled-plugin warning. Full-profile schema projection

@@ -61,7 +61,7 @@ try {
   const collection = schema['x-cordis']
   const kiro = collection.entries.find((entry) => entry.name === 'dsh-kiro')
   assert.equal(kiro?.status, 'schema', 'The native loader must import and project the Kiro config')
-  // DSH 0.2.1-rc.2 cannot project its own agent-preset carriers. Permit only
+  // DSH 0.2.2-rc.1 cannot project its own agent-preset carriers. Permit only
   // that exact upstream diagnostic; unexpected errors still fail this check.
   const errors = collection.diagnostics.filter((entry) => entry.level === 'error')
   for (const error of errors) {
